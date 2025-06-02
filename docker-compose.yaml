@@ -1,0 +1,46 @@
+version: "3.6"
+
+services:
+  postgres:
+    networks:
+      - net
+    image: postgres:13
+    container_name: postgres
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:rw
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_DB: mirea
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432:5432
+  app:
+    networks:
+      - net
+    build: .
+    ports:
+      - "8000:8000"
+    expose:
+      - 8000
+    depends_on:
+      - postgres
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.admin
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:5050"
+
+networks:
+  net:
+    driver: bridge
+
+volumes:
+  postgres_data:
