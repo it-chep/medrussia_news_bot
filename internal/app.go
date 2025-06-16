@@ -2,64 +2,41 @@ package internal
 
 import (
 	"context"
-	"fmt"
-	"github.com/jackc/pgx/v5"
-	"log"
-	"medrussia_news_bot/internal/bot"
-	"time"
-
-	"github.com/georgysavva/scany/v2/dbscan"
-	"github.com/georgysavva/scany/v2/pgxscan"
-
-	tele "gopkg.in/telebot.v3"
+	"log/slog"
+	"medrussia_news_bot/internal/config"
+	"medrussia_news_bot/internal/infrastructure/controller"
+	"medrussia_news_bot/internal/infrastructure/controller/bot_controller"
+	"medrussia_news_bot/internal/pkg/telegram"
+	"net/http"
 )
 
-func init() {
-	// ignore db columns that doesn't exist at the destination
-	dbscanAPI, err := pgxscan.NewDBScanAPI(dbscan.WithAllowUnknownColumns(true))
-	if err != nil {
-		panic(err)
-	}
-
-	api, err := pgxscan.NewAPI(dbscanAPI)
-	if err != nil {
-		panic(err)
-	}
-
-	pgxscan.DefaultAPI = api
+type controllers struct {
+	botController  bot_controller.TelegramWebhookController
+	restController controller.RestController
 }
 
 type App struct {
-	BotSvc *bot.Bot
-	TgBot  *tele.Bot
+	logger      *slog.Logger
+	config      *config.Config
+	controller  controllers
+	bot         *telegram.Bot
+	controllers controllers
+	server      *http.Server
 }
 
 func NewApp(ctx context.Context) *App {
-	fmt.Println("Инициализация бота")
-	pref := tele.Settings{
-		Token:  "",
-		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
-	}
+	a := &App{}
 
-	botTg, err := tele.NewBot(pref)
-	if err != nil {
-		log.Fatal(err)
-	}
+	a.initLogger(ctx).
+		initConfig(ctx).
+		initBot(ctx).
+		initBotController(ctx).
+		initRestController(ctx)
 
-	fmt.Println("Инициализация постгреса")
-	// pgx
-	conn, err := pgx.Connect(ctx, "postgres://postgres:postgres@postgres:5432/mirea?sslmode=disable")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return &App{
-		TgBot: botTg,
-	}
+	return a
 }
 
-func (a *App) Init() {
-	fmt.Println("ИНИТ")
-
-	a.BotSvc = bot.New(a.TgBot)
+func (app *App) Run(_ context.Context) error {
+	app.logger.Info("start server")
+	return app.server.ListenAndServe()
 }
