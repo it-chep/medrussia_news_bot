@@ -23,20 +23,19 @@ func NewRestController(
 	cfg *config.Config,
 	logger *slog.Logger,
 	botApiController BotController,
-) RestController {
+) *RestController {
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.POST("/"+cfg.Bot.Token+"/", botApiController.BotWebhookHandler)
 
-	return RestController{
+	rest := &RestController{
 		router:           router,
 		cfg:              cfg,
 		logger:           logger,
 		botApiController: botApiController,
 	}
-}
 
-func (r RestController) InitController() {
-	r.router.POST("/"+r.cfg.Bot.Token+"/", r.botApiController.BotWebhookHandler)
+	return rest
 }
 
 func (r RestController) ServeHTTP(w http.ResponseWriter, req *http.Request) {
