@@ -23,7 +23,8 @@ type Repo interface {
 	CreateUser(ctx context.Context, userID int64) error
 	UpdateLastAdminMessage(ctx context.Context, userID, messageID int64) error
 	UpdateLastUserMessage(ctx context.Context, userID, messageID int64) error
-	UpdateAvailable(ctx context.Context, userID int64, available bool) error
+	TurnOnAvailable(ctx context.Context, userID int64) error
+	CloseAppeal(ctx context.Context, userID int64) error
 }
 
 const (
@@ -140,12 +141,14 @@ func (t TelegramWebhookController) ForkMessages(ctx context.Context, update tgbo
 		user, err = t.repo.GetUser(ctx, update.Message.From.ID)
 	}
 
+	if !user.Available {
+		// отвечаем пользователю
+		t.bot.SendMessage(tgbotapi.NewMessage(update.Message.Chat.ID, "Пожалуйста ожидайте, вам скоро ответят"))
+	}
 	// ставим флаг активности диалога
 	t.setActiveUserFlag(ctx, user)
 	// шлем админам
 	t.forwardToAdmin(ctx, user, update)
-	// отвечаем пользователю
-	t.bot.SendMessage(tgbotapi.NewMessage(update.Message.Chat.ID, "Пожалуйста ожидайте, вас скоро ответят"))
 }
 
 // ForkAdminMessage пересылка пользователю сообщение админа
@@ -247,8 +250,9 @@ func (t TelegramWebhookController) setActiveUserFlag(ctx context.Context, user *
 	if user.Available {
 		return
 	}
+	user.Available = true
 
-	err := t.repo.UpdateAvailable(ctx, user.ID, true)
+	err := t.repo.TurnOnAvailable(ctx, user.UserID)
 	if err != nil {
 		t.logger.Error(fmt.Sprintf("%s", err))
 	}
@@ -256,7 +260,11 @@ func (t TelegramWebhookController) setActiveUserFlag(ctx context.Context, user *
 
 // forwardToAdmin пересылаем админам и ставим пользователю id сообщения в админ чате
 func (t TelegramWebhookController) forwardToAdmin(ctx context.Context, user *repo.UserDialog, update tgbotapi.Update) {
-	forwardMessageID, err := t.bot.ForwardMessageToAdminChat(user.LastAdminMessageID.Int64, update.Message.Chat.ID, update.Message.Text)
+	text := fmt.Sprintf(
+		"Пользователь: @%s\nИмя: %s %s\n\nТекст сообщения: %s",
+		update.Message.Chat.UserName, update.Message.Chat.LastName, update.Message.Chat.FirstName, update.Message.Text,
+	)
+	forwardMessageID, err := t.bot.ForwardMessageToAdminChat(user.LastAdminMessageID.Int64, update.Message.Chat.ID, text)
 	if err != nil {
 		t.logger.Error(fmt.Sprintf("%s", err))
 		return
@@ -337,7 +345,7 @@ func (t TelegramWebhookController) processCloseCallback(ctx context.Context, upd
 		return
 	}
 
-	err = t.repo.UpdateAvailable(ctx, userID, false)
+	err = t.repo.CloseAppeal(ctx, userID)
 	if err != nil {
 		t.logger.Error("Ошибка при закрытии обращения пользователя: " + err.Error())
 	}

@@ -78,10 +78,17 @@ func (r *Repo) UpdateLastUserMessage(ctx context.Context, userID, messageID int6
 	return err
 }
 
-// UpdateAvailable обновляет available
-func (r *Repo) UpdateAvailable(ctx context.Context, userID int64, available bool) error {
-	sql := `update users_dialog set available = $1 where user_id = $2`
-	_, err := r.client.Exec(ctx, sql, available, userID)
+// TurnOnAvailable обновляет available
+func (r *Repo) TurnOnAvailable(ctx context.Context, userID int64) error {
+	sql := `update users_dialog set available = true where user_id = $1`
+	_, err := r.client.Exec(ctx, sql, userID)
+	return err
+}
+
+// CloseAppeal - закрывает обращение
+func (r *Repo) CloseAppeal(ctx context.Context, userID int64) error {
+	sql := `update users_dialog set available = false, last_admin_message_id = 0, last_user_message_id = 0 where user_id = $1`
+	_, err := r.client.Exec(ctx, sql, userID)
 	return err
 }
 
