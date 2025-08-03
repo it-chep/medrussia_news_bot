@@ -107,6 +107,9 @@ func (t TelegramWebhookController) BotWebhookHandler(c *gin.Context) {
 	} else if update.CallbackQuery != nil {
 		ctx := context.WithValue(context.Background(), "userID", update.CallbackQuery.From.ID)
 		t.ForkCallbacks(ctx, update)
+	} else if update.EditedMessage != nil {
+		ctx := context.WithValue(context.Background(), "userID", update.EditedMessage.From.ID)
+		t.ForkEditMessage(ctx, update)
 	} else {
 		t.logger.Warn(fmt.Sprintf("Unhandled update type: %+v", update))
 		c.AbortWithStatus(http.StatusInternalServerError)
@@ -230,6 +233,8 @@ func (t TelegramWebhookController) getUserFromWebhook(update tgbotapi.Update) dt
 		userJSON, err = json.Marshal(update.CallbackQuery.From)
 	} else if update.Message != nil {
 		userJSON, err = json.Marshal(update.Message.From)
+	} else if update.EditedMessage != nil {
+		userJSON, err = json.Marshal(update.EditedMessage.From)
 	} else {
 		t.logger.Error("Cannot get user from webhook - no valid user data found", update)
 		return dto.TgUserDTO{}
@@ -294,6 +299,8 @@ func (t TelegramWebhookController) getMessageFromWebhook(update tgbotapi.Update)
 		userJSON, err = json.Marshal(update.CallbackQuery.Message)
 	} else if update.Message != nil {
 		userJSON, err = json.Marshal(update.Message)
+	} else if update.EditedMessage != nil {
+		userJSON, err = json.Marshal(update.EditedMessage.From)
 	} else {
 		t.logger.Error("Cannot get user from webhook - no valid user data found", update)
 		return dto.MessageDTO{}
@@ -337,6 +344,33 @@ func (t TelegramWebhookController) processCloseCallback(ctx context.Context, upd
 	}
 
 	messageID := update.CallbackQuery.Message.MessageID
+
+	updatedMessageID, err := t.bot.SetCloseButtonInAdminChat(int64(messageID))
+	if err != nil {
+		t.notifyAdmin(
+			fmt.Sprintf(
+				"Ошибка при закрытии обращения (изменение сообщения messageID: %d) %v",
+				updatedMessageID,
+				err.Error(),
+			),
+		)
+
+		return
+	}
+
+	err = t.repo.CloseAppeal(ctx, userID)
+	if err != nil {
+		t.logger.Error("Ошибка при закрытии обращения пользователя: " + err.Error())
+	}
+}
+
+func (t TelegramWebhookController) ForkEditMessage(ctx context.Context, update tgbotapi.Update) {
+	userID := update.EditedMessage.From.ID
+	if userID == 0 {
+		return
+	}
+
+	messageID := update.EditedMessage.MessageID
 
 	updatedMessageID, err := t.bot.SetCloseButtonInAdminChat(int64(messageID))
 	if err != nil {
