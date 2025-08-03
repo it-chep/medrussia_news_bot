@@ -228,8 +228,11 @@ func (t TelegramWebhookController) getUserFromWebhook(update tgbotapi.Update) dt
 
 	if update.CallbackQuery != nil {
 		userJSON, err = json.Marshal(update.CallbackQuery.From)
-	} else {
+	} else if update.Message != nil {
 		userJSON, err = json.Marshal(update.Message.From)
+	} else {
+		t.logger.Error("Cannot get user from webhook - no valid user data found", update)
+		return dto.TgUserDTO{}
 	}
 
 	if err != nil {
@@ -289,8 +292,11 @@ func (t TelegramWebhookController) getMessageFromWebhook(update tgbotapi.Update)
 
 	if update.CallbackQuery != nil {
 		userJSON, err = json.Marshal(update.CallbackQuery.Message)
-	} else {
+	} else if update.Message != nil {
 		userJSON, err = json.Marshal(update.Message)
+	} else {
+		t.logger.Error("Cannot get user from webhook - no valid user data found", update)
+		return dto.MessageDTO{}
 	}
 
 	if err != nil {
