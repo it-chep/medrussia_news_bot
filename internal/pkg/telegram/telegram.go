@@ -101,6 +101,19 @@ func (bot *Bot) SendMessageToAdmin(
 	return int64(message.MessageID), err
 }
 
+func (bot *Bot) SendMessageToSuperAdmin(
+	chatID int64, text string,
+) (messageID int64, err error) {
+	msg := tgbotapi.NewMessage(chatID, text)
+
+	message, err := bot.Bot.Send(msg)
+	if err != nil {
+		bot.logger.Error("Ошибка пересылки сообщения: " + err.Error())
+	}
+
+	return int64(message.MessageID), err
+}
+
 func (bot *Bot) ForwardMessageToAdminChat(
 	replyToMessageID,
 	chatID int64,

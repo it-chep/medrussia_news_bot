@@ -347,6 +347,10 @@ func (t TelegramWebhookController) processCloseCallback(ctx context.Context, upd
 
 	updatedMessageID, err := t.bot.SetCloseButtonInAdminChat(int64(messageID))
 	if err != nil {
+		if err.Error() == "message to edit not found" {
+			t.logger.Warn(err.Error())
+			return
+		}
 		t.notifyAdmin(
 			fmt.Sprintf(
 				"Ошибка при закрытии обращения (изменение сообщения messageID: %d) %v",
@@ -374,6 +378,10 @@ func (t TelegramWebhookController) ForkEditMessage(ctx context.Context, update t
 
 	updatedMessageID, err := t.bot.SetCloseButtonInAdminChat(int64(messageID))
 	if err != nil {
+		if err.Error() == "message to edit not found" {
+			t.logger.Warn(err.Error())
+			return
+		}
 		t.notifyAdmin(
 			fmt.Sprintf(
 				"Ошибка при закрытии обращения (изменение сообщения messageID: %d) %v",
@@ -393,7 +401,7 @@ func (t TelegramWebhookController) ForkEditMessage(ctx context.Context, update t
 
 // notifyAdmin оповещение админа о чем-то
 func (t TelegramWebhookController) notifyAdmin(message string) {
-	_, err := t.bot.SendMessageToAdmin(message)
+	_, err := t.bot.SendMessageToSuperAdmin(243807051, message)
 	if err != nil {
 		t.logger.Error(err.Error())
 	}
