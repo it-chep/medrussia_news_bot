@@ -1,5 +1,7 @@
 package dto
 
+import commonDto "medrussia_news_bot/internal/dto"
+
 type Chat struct {
 	ID int64 `json:"id"`
 }
@@ -96,6 +98,9 @@ type MessageDTO struct {
 	MigrateToChatID   int64                 `json:"migrate_to_chat_id,omitempty"`
 	MigrateFromChatID int64                 `json:"migrate_from_chat_id,omitempty"`
 	ReplyMarkup       *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+
+	MediaID   string
+	MediaType commonDto.MediaType
 }
 
 type TgUserDTO struct {
