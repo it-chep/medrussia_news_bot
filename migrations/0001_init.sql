@@ -1,3 +1,5 @@
+-- +goose Up
+-- +goose StatementBegin
 create table if not exists users_dialog
 (
     id serial primary key,
@@ -7,3 +9,9 @@ create table if not exists users_dialog
     available bool
 );
 
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+drop table if exists users_dialog;
+-- +goose StatementEnd

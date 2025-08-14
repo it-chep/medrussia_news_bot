@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"io"
 	"log/slog"
 	"medrussia_news_bot/internal/config"
+	commonDto "medrussia_news_bot/internal/dto"
 	"medrussia_news_bot/internal/infrastructure/controller/bot_controller/dto"
 	"medrussia_news_bot/internal/infrastructure/repo"
 	"medrussia_news_bot/internal/pkg/telegram"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/gin-gonic/gin"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 type Repo interface {
@@ -146,12 +146,12 @@ func (t TelegramWebhookController) ForkMessages(ctx context.Context, update tgbo
 
 	if !user.Available {
 		// отвечаем пользователю
-		t.bot.SendMessage(tgbotapi.NewMessage(update.Message.Chat.ID, "Пожалуйста ожидайте, вам скоро ответят"))
+		t.bot.SendMessage(tgbotapi.NewMessage(update.Message.Chat.ID, "Спасибо, ваше сообщение принято"))
 	}
 	// ставим флаг активности диалога
 	t.setActiveUserFlag(ctx, user)
 	// шлем админам
-	t.forwardToAdmin(ctx, user, update)
+	t.forwardToAdmin(ctx, user, tgMessage, update)
 }
 
 // ForkAdminMessage пересылка пользователю сообщение админа
@@ -267,7 +267,34 @@ func (t TelegramWebhookController) setActiveUserFlag(ctx context.Context, user *
 }
 
 // forwardToAdmin пересылаем админам и ставим пользователю id сообщения в админ чате
-func (t TelegramWebhookController) forwardToAdmin(ctx context.Context, user *repo.UserDialog, update tgbotapi.Update) {
+func (t TelegramWebhookController) forwardToAdmin(ctx context.Context, user *repo.UserDialog, tgMessage dto.MessageDTO, update tgbotapi.Update) {
+	// Если пришло какое-то медиа (видос, фотка, документ)
+	if tgMessage.MediaID != "" {
+		text := fmt.Sprintf(
+			"Пользователь: @%s\nИмя: %s %s\n\n",
+			update.Message.Chat.UserName, update.Message.Chat.LastName, update.Message.Chat.FirstName,
+		)
+
+		forwardMessageID, err := t.bot.ForwardMessageWithContentType(tgMessage, text)
+		if err != nil {
+			t.logger.Error(fmt.Sprintf("%s", err))
+			return
+		}
+		err = t.repo.UpdateLastUserMessage(ctx, user.UserID, forwardMessageID)
+		if err != nil {
+			t.logger.Error(fmt.Sprintf("%s", err))
+			return
+		}
+
+		_, err = t.bot.CleanMessageButtonsInAdminChat(user.LastUserMessageID.Int64)
+		if err != nil {
+			t.logger.Error("Ошибка при очистки клавиатуры сообщения администратора: " + err.Error())
+		}
+
+		return
+	}
+
+	// обычный флоу
 	text := fmt.Sprintf(
 		"Пользователь: @%s\nИмя: %s %s\n\nТекст сообщения: %s",
 		update.Message.Chat.UserName, update.Message.Chat.LastName, update.Message.Chat.FirstName, update.Message.Text,
@@ -291,16 +318,51 @@ func (t TelegramWebhookController) forwardToAdmin(ctx context.Context, user *rep
 
 // getMessageFromWebhook получение сообщения из вебхука
 func (t TelegramWebhookController) getMessageFromWebhook(update tgbotapi.Update) dto.MessageDTO {
-	var tgMessage dto.MessageDTO
-	var userJSON []byte
-	var err error
+	var (
+		tgMessage   dto.MessageDTO
+		messageJSON []byte
+		mediaID     string
+		err         error
+	)
 
+	mediaType := commonDto.Unknown
 	if update.CallbackQuery != nil {
-		userJSON, err = json.Marshal(update.CallbackQuery.Message)
+		messageJSON, err = json.Marshal(update.CallbackQuery.Message)
 	} else if update.Message != nil {
-		userJSON, err = json.Marshal(update.Message)
+
+		if update.Message.Video != nil {
+			mediaID = update.Message.Video.FileID
+			mediaType = commonDto.Video
+		}
+
+		if len(update.Message.Photo) != 0 {
+			mediaID = update.Message.Photo[0].FileID
+			mediaType = commonDto.Photo
+		}
+
+		if update.Message.Document != nil {
+			mediaID = update.Message.Document.FileID
+			mediaType = commonDto.Document
+		}
+
+		if update.Message.Audio != nil {
+			mediaID = update.Message.Audio.FileID
+			mediaType = commonDto.Audio
+		}
+
+		if update.Message.Voice != nil {
+			mediaID = update.Message.Voice.FileID
+			mediaType = commonDto.Voice
+		}
+
+		if update.Message.VideoNote != nil {
+			mediaID = update.Message.VideoNote.FileID
+			mediaType = commonDto.VideoNote
+		}
+
+		messageJSON, err = json.Marshal(update.Message)
 	} else if update.EditedMessage != nil {
-		userJSON, err = json.Marshal(update.EditedMessage.From)
+		messageJSON, err = json.Marshal(update.EditedMessage)
 	} else {
 		t.logger.Error("Cannot get user from webhook - no valid user data found", update)
 		return dto.MessageDTO{}
@@ -311,10 +373,13 @@ func (t TelegramWebhookController) getMessageFromWebhook(update tgbotapi.Update)
 		return dto.MessageDTO{}
 	}
 
-	if err = json.Unmarshal(userJSON, &tgMessage); err != nil {
+	if err = json.Unmarshal(messageJSON, &tgMessage); err != nil {
 		t.logger.Error(fmt.Sprintf("Error decoding JSON: %s", err))
 		return dto.MessageDTO{}
 	}
+
+	tgMessage.MediaID = mediaID
+	tgMessage.MediaType = mediaType
 
 	return tgMessage
 }

@@ -3,11 +3,32 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
 )
+
+func (c Config) Token() string {
+	return c.Bot.Token
+}
+
+func (c Config) WebhookURL() string {
+	return c.Bot.WebhookURL
+}
+
+func (c Config) UseWebhook() bool {
+	return c.Bot.UseWebhook
+}
+
+func (c Config) AdminChatID() int64 {
+	adminChatID, err := strconv.ParseInt(c.Bot.AdminChatID, 10, 64)
+	if err != nil {
+		panic("Неправильно указан adminChatID")
+	}
+	return adminChatID
+}
 
 type Config struct {
 	Env           string        `yaml:"env" env-default:"local"`
@@ -40,6 +61,7 @@ type BotConfig struct {
 	WebhookURL    string        `yaml:"webhook"`
 	UpdatesConfig UpdatesConfig `yaml:"updates_config"`
 	AdminChatID   string        `yaml:"admin_chat_id"`
+	UseWebhook    bool          `yaml:"use_webhook"`
 }
 
 type UpdatesConfig struct {

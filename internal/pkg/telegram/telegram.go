@@ -4,15 +4,68 @@ import (
 	"fmt"
 	"log/slog"
 	"medrussia_news_bot/internal/config"
+	commonDto "medrussia_news_bot/internal/dto"
+	"medrussia_news_bot/internal/infrastructure/controller/bot_controller/dto"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+type Config interface {
+	WebhookURL() string
+	Token() string
+	UseWebhook() bool
+	AdminChatID() int64
+}
+
 type Bot struct {
 	Bot         *tgbotapi.BotAPI
 	logger      *slog.Logger
+	updates     tgbotapi.UpdatesChannel
 	adminChatID int64
+	useWebhook  bool
+}
+
+func NewTgBot(cfg Config, logger *slog.Logger) *Bot {
+	bot, err := tgbotapi.NewBotAPI(cfg.Token())
+	if err != nil {
+		return nil
+	}
+
+	// Режим вебхуков
+	if cfg.UseWebhook() {
+		hook, _ := tgbotapi.NewWebhook(cfg.WebhookURL() + cfg.Token() + "/")
+		_, err = bot.Request(hook)
+		if err != nil {
+			return nil
+		}
+
+		_, err = bot.GetWebhookInfo()
+		if err != nil {
+			return nil
+		}
+
+		return &Bot{
+			Bot:        bot,
+			useWebhook: true,
+		}
+	}
+
+	// Режим поллинга
+	_, _ = bot.Request(tgbotapi.DeleteWebhookConfig{})
+
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates := bot.GetUpdatesChan(u)
+	adminChatID := cfg.AdminChatID()
+
+	return &Bot{
+		Bot:         bot,
+		updates:     updates,
+		useWebhook:  false,
+		logger:      logger,
+		adminChatID: adminChatID,
+	}
 }
 
 func NewTelegramBot(cfg *config.Config, logger *slog.Logger) *Bot {
@@ -143,6 +196,75 @@ func (bot *Bot) ForwardMessageToAdminChat(
 	return int64(message.MessageID), err
 }
 
+// ForwardMessageWithContentType отправляет сообщение с media
+func (bot *Bot) ForwardMessageWithContentType(msg dto.MessageDTO, text string) (int64, error) {
+	var message tgbotapi.Chattable
+
+	if msg.MediaType == commonDto.Video {
+		videoMsg := tgbotapi.NewVideo(bot.adminChatID, tgbotapi.FileID(msg.MediaID))
+		videoMsg.Caption = text
+		videoMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(
+				"Закрыть обращение ❇️",
+				fmt.Sprintf("close_%d", msg.Chat.ID),
+			)),
+		)
+		message = videoMsg
+	}
+	if msg.MediaType == commonDto.Photo {
+		photoMsg := tgbotapi.NewPhoto(bot.adminChatID, tgbotapi.FileID(msg.MediaID))
+		photoMsg.Caption = text
+		photoMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(
+				"Закрыть обращение ❇️",
+				fmt.Sprintf("close_%d", msg.Chat.ID),
+			)),
+		)
+		message = photoMsg
+	}
+	if msg.MediaType == commonDto.Audio {
+		audioMsg := tgbotapi.NewAudio(bot.adminChatID, tgbotapi.FileID(msg.MediaID))
+		audioMsg.Caption = text
+		audioMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(
+				"Закрыть обращение ❇️",
+				fmt.Sprintf("close_%d", msg.Chat.ID),
+			)),
+		)
+		message = audioMsg
+	}
+	if msg.MediaType == commonDto.Document {
+		documentMsg := tgbotapi.NewDocument(bot.adminChatID, tgbotapi.FileID(msg.MediaID))
+		documentMsg.Caption = text
+		documentMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(
+				"Закрыть обращение ❇️",
+				fmt.Sprintf("close_%d", msg.Chat.ID),
+			)),
+		)
+		message = documentMsg
+	}
+	if msg.MediaType == commonDto.VideoNote {
+		videoNoteMsg := tgbotapi.NewVideoNote(bot.adminChatID, 0, tgbotapi.FileID(msg.MediaID))
+		videoNoteMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData(
+				"Закрыть обращение ❇️",
+				fmt.Sprintf("close_%d", msg.Chat.ID),
+			)),
+		)
+		message = videoNoteMsg
+	}
+
+	mess, err := bot.Bot.Send(message)
+	if err != nil {
+		bot.logger.Error("Ошибка пересылки сообщения: " + err.Error())
+	}
+
+	bot.logger.Info(fmt.Sprintf("Сообщение пользователя: %v", message))
+
+	return int64(mess.MessageID), err
+}
+
 // CleanMessageButtonsInAdminChat убирает inline кнопки в сообщении по его ID
 func (bot *Bot) CleanMessageButtonsInAdminChat(
 	messageID int64,
@@ -189,4 +311,8 @@ func (bot *Bot) SendMessageAndGetId(msg tgbotapi.MessageConfig) int {
 		bot.logger.Error(fmt.Sprintf("%s: Bot SendMessageAndGetId", err))
 	}
 	return sentMessage.MessageID
+}
+
+func (bot *Bot) GetUpdates() tgbotapi.UpdatesChannel {
+	return bot.updates
 }
